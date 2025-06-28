@@ -129,6 +129,7 @@ public class Cliente extends EngineFrame {
         }
     }
     
+    // teste
     private void enviarDados() {
         
         if ( cliente != null ) {
