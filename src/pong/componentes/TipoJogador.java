@@ -9,7 +9,7 @@ public enum TipoJogador {
     
     UM( 1 ),
     DOIS( 2 ),
-    SERVIDOR( 3 );
+    SERVIDOR( 0 );
     
     public int valor;
     
@@ -19,6 +19,15 @@ public enum TipoJogador {
 
     public int getValor() {
         return valor;
+    }
+    
+    public static TipoJogador fromValor(int valor) {
+        for (TipoJogador tipo : TipoJogador.values()) {
+            if (tipo.valor == valor) {
+                return tipo;
+            }
+        }
+        throw new IllegalArgumentException("Valor de TipoJogador inválido: " + valor);
     }
     
 }

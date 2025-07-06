@@ -1,15 +1,15 @@
-package pong;
+package pong.block;
 
+import pong.*;
 import br.com.davidbuzatto.jsge.core.engine.EngineFrame;
 import static br.com.davidbuzatto.jsge.core.engine.EngineFrame.WHITE;
 import br.com.davidbuzatto.jsge.math.Vector2;
 import java.io.IOException;
+import java.net.DatagramPacket;
+import java.net.DatagramSocket;
 import java.net.InetAddress;
-import java.net.InetSocketAddress;
-import java.net.SocketAddress;
-import java.nio.ByteBuffer;
-import java.nio.channels.DatagramChannel;
-import java.nio.charset.StandardCharsets;
+import java.net.SocketException;
+import java.net.UnknownHostException;
 import pong.componentes.Bola;
 import pong.componentes.Jogador;
 import pong.componentes.TipoJogador;
@@ -27,24 +27,26 @@ public class Cliente extends EngineFrame {
     
     private int porta;
     private String host;
-    private InetSocketAddress endereco;
-    private DatagramChannel cliente;
-    private ByteBuffer buffer;
+    private InetAddress iAddr;
+    private DatagramSocket cliente;
     
     private boolean executando;
+    private long tempoEspera;
+    private int tamanhoBuffer;
     
     private Bola bola;
     private Jogador jogador;
     private TipoJogador tipo;
     private Jogador adversario;
     
-    public Cliente( int porta, String host, int tamanhoBuffer, TipoJogador tipo ) {
+    public Cliente( int porta, String host, long tempoEspera, int tamanhoBuffer, TipoJogador tipo ) {
         super( 800, 450, "Pong - Cliente", 60, true );
         this.id = idCounter++;
         this.porta = porta;
         this.host = host;
+        this.tempoEspera = tempoEspera;
+        this.tamanhoBuffer = tamanhoBuffer;
         this.tipo = tipo;
-        this.buffer = ByteBuffer.allocate( tamanhoBuffer );
         iniciarCliente();
     }
     
@@ -70,14 +72,8 @@ public class Cliente extends EngineFrame {
     
     @Override
     public void update( double delta ) {
-        
         criarJogador();
-        
-        enviarDados();
-        receberDados();
-        
         jogador.atualizar( this, delta );
-        
     }
     
     @Override
@@ -120,77 +116,69 @@ public class Cliente extends EngineFrame {
         if ( !executando ) {
             executando = true;
             try {
-                endereco = new InetSocketAddress( InetAddress.getByName( host ), porta );
-                cliente = DatagramChannel.open();
-                cliente.configureBlocking( false );
-            } catch ( IOException exc ) {
+                iAddr = InetAddress.getByName( host );
+                cliente = new DatagramSocket();
+                iniciarThreadEnvio();
+                iniciarThreadRecebimento();
+            } catch ( SocketException | UnknownHostException exc ) {
                 exc.printStackTrace();
             }
         }
     }
     
-    private void enviarDados() {
+    private void iniciarThreadEnvio() {
         
-        if ( cliente != null ) {
-            
-            try {
-                
-                String resposta = String.format( 
-                    "%d;%d;%d;%d;%d", 
-                    jogador.tipo.valor,
-                    (int) jogador.pos.x,
-                    (int) jogador.pos.y,
-                    (int) jogador.dim.x,
-                    (int) jogador.dim.y
-                );
-
-                ByteBuffer bufferEnvio = ByteBuffer.wrap( resposta.getBytes( StandardCharsets.UTF_8 ) );
-                cliente.send( bufferEnvio, endereco );
-                
-            } catch ( IOException exc ) {
-                System.out.println( "falha ao enviar (cliente)" );
+        new Thread( () -> {
+            while ( executando ) {
+                try {
+                    DatagramUtils.enviarDados( 
+                        cliente, 
+                        iAddr, 
+                        porta, 
+                        String.format( 
+                            "%d;%d;%d;%d;%d", 
+                            jogador.tipo.valor,
+                            (int) jogador.pos.x,
+                            (int) jogador.pos.y,
+                            (int) jogador.dim.x,
+                            (int) jogador.dim.y
+                        )
+                    );
+                    Thread.sleep( tempoEspera );
+                } catch ( InterruptedException | IOException exc ) {
+                    System.out.println( "falha ao enviar (cliente)" );
+                }
             }
-        
-        }
+        }).start();
         
     }
     
-    private void receberDados() {
+    private void iniciarThreadRecebimento() {
         
-        if ( cliente != null ) {
-            
-            try {
-
-                buffer.clear();
-                SocketAddress remetente = cliente.receive( buffer );
-
-                if ( remetente != null ) {
+        new Thread( () -> {
+            while ( executando ) {
+                try {
                     
-                    buffer.flip();
+                    DatagramPacket pacoteRecebido = DatagramUtils.receberDados( cliente, tamanhoBuffer );
+                    String dadosRececebidos = DatagramUtils.extrairDados( pacoteRecebido );
                     
-                    String dadosRececebidos = StandardCharsets.UTF_8.decode( buffer ).toString();
                     String[] d = dadosRececebidos.split( ";" );
+                    bola.pos.x = Integer.parseInt( d[0] );
+                    bola.pos.y = Integer.parseInt( d[1] );
+                    bola.raio = Integer.parseInt( d[2] );
                     
-                    if ( d.length == 7 ) {
-                        
-                        bola.pos.x = Integer.parseInt( d[0] );
-                        bola.pos.y = Integer.parseInt( d[1] );
-                        bola.raio = Integer.parseInt( d[2] );
-
-                        adversario.pos.x = Integer.parseInt( d[3] );
-                        adversario.pos.y = Integer.parseInt( d[4] );
-                        adversario.dim.x = Integer.parseInt( d[5] );
-                        adversario.dim.y = Integer.parseInt( d[6] );
-                        
-                    }
-
+                    adversario.pos.x = Integer.parseInt( d[3] );
+                    adversario.pos.y = Integer.parseInt( d[4] );
+                    adversario.dim.x = Integer.parseInt( d[5] );
+                    adversario.dim.y = Integer.parseInt( d[6] );
+                    
+                    Thread.sleep( tempoEspera );
+                    
+                } catch ( InterruptedException | IOException exc ) {
+                    System.out.println( "falha ao receber (cliente)" );
                 }
-
-            } catch ( IOException exc ) {
-                System.out.println( "falha ao receber (cliente)" );
             }
-        
-        }
+        }).start();
         
     }
     
